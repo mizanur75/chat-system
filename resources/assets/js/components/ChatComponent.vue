@@ -4,13 +4,14 @@
             
             <div class="col-md-3">
                 <div class="card card-default">
-                    <div class="card-header">
+                    <div class="card-header friends">
                         <strong>Friends</strong>
                     </div>
-                    <ul class="list-group">
-                        <li class="list-group-item" :key="friend.id" v-for="friend in friends">
-                            <a href="" @click.prevent="openChat(friend)">
+                    <ul class="list-group" v-if="friend.online">
+                        <li class="list-group-item" v-for="friend in friends" :key="friend.id">
+                            <a href="" @click.prevent="openChat(friend)" style="color:black;">
                                 {{friend.name}}
+                                <span class="text-danger" v-if="friend.session && (friend.session.unreadCount>0)">{{friend.session.unreadCount}}</span>
                             </a>
                             <i class="fa fa-circle float-right text-success" v-if="friend.online" aria-hidden="true"></i>
                         </li>
@@ -41,7 +42,12 @@ import MessageComponent from './MessageComponent';
                 friend.session.open =false;
             },
             getFriends(){
-                axios.post('/getFriends').then(res => this.friends=res.data.data);
+                axios.post('/getFriends').then(res => {
+                    this.friends=res.data.data
+                    this.friends.forEach(
+                        friend=>(friend.session ? this.listenForEverySession(friend):"")
+                    );
+                });
             },
             openChat(friend){
                 if(friend.session){
@@ -49,6 +55,7 @@ import MessageComponent from './MessageComponent';
                        (friend.session? (friend.session.open= false):'')
                     );
                     friend.session.open = true;
+                    friend.session.unreadCount = 0;
                 }else{
                     this.createSession(friend);
                 }
@@ -59,6 +66,13 @@ import MessageComponent from './MessageComponent';
                 .then(res => {
                     (friend.session=res.data.data),(friend.session.open = true);
                 });
+            },
+            listenForEverySession(friend){
+                Echo.private(`Chat.${friend.session.id}`)
+                .listen(
+                    "PrivatechatEvent",
+                    e => friend.session.open?"": friend.session.unreadCount++
+                );
             }
         },
         created(){
@@ -67,6 +81,7 @@ import MessageComponent from './MessageComponent';
             Echo.channel("Chat").listen("SessionEvent", e =>{
                 let friend = this.friends.find(friend => friend.id == e.session_by);
                 friend.session = e.session;
+                this.listenForEverySession(friend);
             });
 
             Echo.join(`Chat`)
@@ -90,3 +105,10 @@ import MessageComponent from './MessageComponent';
         
     }
 </script>
+<style>
+.friends{
+    background-color: #2c3e50;
+    color: #f5f5f5;
+}
+</style>
+
